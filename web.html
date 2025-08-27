@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PhotoShare — Unsplash + Pinterest (HTML/CSS/JS)</title>
+  <style>
+    /* =========================
+       PhotoShare — single-file demo
+       Features:
+       - Responsive masonry grid using CSS columns
+       - Search + client-side filtering
+       - Upload (file -> localStorage)
+       - Modal / detail view with download / like / save to collection
+       - Infinite scroll (generates placeholder images)
+       - Collections stored in localStorage
+       - Keyboard accessibility and basic ARIA
+       - Long, commented code for learning / hacking
+    ========================= */
+
+    :root{
+      --bg: #0f1724;
+      --card: #0b1220;
+      --muted: #98a0b3;
+      --accent: #06b6d4;
+      --glass: rgba(255,255,255,0.04);
+      color-scheme: dark;
+    }
+    html,body{height:100%;}
+    body{
+      margin:0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+      background: linear-gradient(180deg,#071027 0%, #071827 100%);
+      color:#e6eef8;
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+      display:flex;
+      flex-direction:column;
+    }
+
+    header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+      padding:18px 24px;
+      position:sticky;
+      top:0;
+      z-index:40;
+      backdrop-filter: blur(6px);
+      background: linear-gradient(180deg, rgba(7,18,39,0.6), rgba(7,18,39,0.35));
+      border-bottom:1px solid rgba(255,255,255,0.03);
+    }
+
+    .brand{display:flex;align-items:center;gap:12px}
+    .logo{
+      width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#3b82f6);display:flex;align-items:center;justify-content:center;font-weight:700;color:#042028
+    }
+    .title{font-weight:700;font-size:18px}
+    .subtitle{font-size:12px;color:var(--muted);margin-top:-2px}
+
+    .controls{display:flex;gap:12px;align-items:center}
+    input[type="search"]{
+      background:var(--glass);
+      border:1px solid rgba(255,255,255,0.04);
+      padding:10px 12px;border-radius:10px;color:inherit;min-width:260px;
+      outline:none
+    }
+    .btn{background:linear-gradient(90deg,#06b6d4,#3b82f6);border:none;padding:10px 12px;border-radius:10px;color:#022;cursor:pointer;font-weight:600}
+    .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)}
+
+    main{display:flex;gap:18px;padding:18px;flex:1;min-height:0}
+
+    /* Sidebar */
+    aside{
+      width:260px;padding:12px;border-radius:12px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:1px solid rgba(255,255,255,0.02);height:calc(100vh - 110px);overflow:auto;position:sticky;top:72px
+    }
+    .sidebar-section{margin-bottom:18px}
+    .sidebar-section h4{margin:0 0 8px 0;color:var(--muted);font-size:13px}
+    .collection{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:8px;background:transparent;border:1px dashed rgba(255,255,255,0.02);margin-bottom:8px}
+
+    /* Gallery (Masonry columns) */
+    .gallery-wrap{flex:1;min-width:0}
+    .masonry{
+      column-count:3;
+      column-gap:16px;
+      padding-bottom:40px;
+    }
+    /* responsive column counts */
+    @media (max-width:1100px){.masonry{column-count:2}}
+    @media (max-width:680px){.masonry{column-count:1}}
+
+    .card{
+      break-inside:avoid;margin-bottom:16px;background:var(--card);border-radius:12px;overflow:hidden;box-shadow:0 8px 30px rgba(2,6,23,0.6);border:1px solid rgba(255,255,255,0.02)
+    }
+    .card img{width:100%;height:auto;display:block}
+    .meta{padding:10px;display:flex;justify-content:space-between;align-items:center}
+    .meta .left{display:flex;gap:10px;align-items:center}
+    .avatar{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#334155,#0ea5e9);display:flex;align-items:center;justify-content:center;font-weight:700}
+    .photo-title{font-weight:600}
+    .photo-author{font-size:12px;color:var(--muted)}
+
+    /* floating loader */
+    .loader{width:100%;display:flex;justify-content:center;padding:24px;color:var(--muted)}
+
+    /* modal */
+    .modal-backdrop{position:fixed;inset:0;background:rgba(2,6,23,0.7);display:none;align-items:center;justify-content:center;z-index:80}
+    .modal{width:min(1100px,96%);max-height:90vh;background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02));border-radius:12px;overflow:auto;border:1px solid rgba(255,255,255,0.02)}
+    .modal-content{display:flex;gap:12px;padding:12px}
+    .modal-left{flex:1}
+    .modal-right{width:360px;padding:12px}
+    .modal img{width:100%;height:auto;border-radius:8px}
+
+    /* upload area */
+    .uploader{border:2px dashed rgba(255,255,255,0.04);padding:12px;border-radius:10px;text-align:center;color:var(--muted)}
+
+    footer{padding:12px 18px;text-align:center;color:var(--muted);font-size:13px}
+
+    /* simple badges */
+    .badge{font-size:12px;padding:6px 8px;border-radius:999px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.02)}
+
+    /* small responsive touches */
+    @media (max-width:980px){aside{display:none}} 
+
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo">PS</div>
+      <div>
+        <div class="title">PhotoShare</div>
+        <div class="subtitle">A lightweight Unsplash + Pinterest style demo</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <input id="search" type="search" placeholder="Search photos, authors, tags..." aria-label="Search photos" />
+      <button id="uploadBtn" class="btn">Upload</button>
+      <button id="newCollectionBtn" class="btn ghost">New Collection</button>
+    </div>
+  </header>
+
+  <main>
+    <aside aria-label="Sidebar" role="navigation">
+      <div class="sidebar-section">
+        <h4>Collections</h4>
+        <div id="collectionsList"></div>
+      </div>
+      <div class="sidebar-section">
+        <h4>Upload</h4>
+        <div class="uploader">
+          <input type="file" id="fileInput" accept="image/*" style="display:none" />
+          <p>Click Upload or drag & drop images onto the grid</p>
+          <small class="badge">Files are saved to your browser only (localStorage)</small>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <h4>About</h4>
+        <p style="color:var(--muted);font-size:13px">This is a single-file demo showing how a masonry grid + modal + upload can be implemented using plain HTML/CSS/JS. No server required.</p>
+      </div>
+    </aside>
+
+    <section class="gallery-wrap">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="badge" id="totalCount">0 photos</div>
+          <div style="color:var(--muted);font-size:13px">Infinite scroll enabled — more photos will appear as you reach the bottom.</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button id="sortBtn" class="btn ghost">Sort: Newest</button>
+          <button id="clearBtn" class="btn ghost">Clear Local Data</button>
+        </div>
+      </div>
+
+      <div id="masonry" class="masonry" aria-live="polite"></div>
+      <div id="loader" class="loader">Scroll to load more...</div>
+    </section>
+  </main>
+
+  <div id="modalBackdrop" class="modal-backdrop" role="dialog" aria-modal="true">
+    <article class="modal" role="document">
+      <div class="modal-content">
+        <div class="modal-left">
+          <img id="modalImage" src="" alt="" />
+        </div>
+        <div class="modal-right">
+          <h3 id="modalTitle">Title</h3>
+          <p id="modalAuthor" style="color:var(--muted)"></p>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <button id="likeBtn" class="btn">Like</button>
+            <button id="downloadBtn" class="btn ghost">Download</button>
+            <select id="saveToCollection" style="padding:8px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.03);color:inherit">
+            </select>
+          </div>
+          <div style="margin-top:18px;color:var(--muted);font-size:13px" id="modalMeta"></div>
+          <div style="margin-top:20px"><button id="closeModal" class="btn ghost">Close</button></div>
+        </div>
+      </div>
+    </article>
+  </div>
+
+  <footer>Made with ❤️ — demo stores everything locally. Refreshing will keep uploaded images (in most browsers) until localStorage is cleared.</footer>
+
+  <script>
+    /* =========================
+       JavaScript: full-featured behavior (long)
+       ========================= */
+
+    // Utilities
+    const $ = (q, el=document) => el.querySelector(q);
+    const $$ = (q, el=document) => Array.from(el.querySelectorAll(q));
+
+    // Seed images (public image CDN placeholders) — helpful so the demo isn't empty
+    const SEED = [
+      {id:'s1',title:'Golden Hills',author:'Alex R',src:'https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=900&q=80&auto=format&fit=crop',w:1200,h:800,likes:12},
+      {id:'s2',title:'City Night',author:'Maya L',src:'https://images.unsplash.com/photo-1467269204594-9661b134dd2b?w=900&q=80&auto=format&fit=crop',w:900,h:1350,likes:34},
+      {id:'s3',title:'Misty Forest',author:'Tom C',src:'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=1200&q=80&auto=format&fit=crop',w:1200,h:800,likes:8},
+      {id:'s4',title:'Minimal Desk',author:'R.Y',src:'https://images.unsplash.com/photo-1515879218367-8466d910aaa4?w=1200&q=80&auto=format&fit=crop',w:1200,h:800,likes:21},
+      {id:'s5',title:'Lake Mirror',author:'K.P',src:'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=1200&q=80&auto=format&fit=crop',w:1200,h:800,likes:47},
+    ];
+
+    // Persistent keys
+    const IMAGES_KEY = 'ps_images_v1_html';
+    const COLLECTIONS_KEY = 'ps_collections_v1_html';
+    const LIKES_KEY = 'ps_likes_v1_html';
+
+    // State
+    let images = loadJSON(IMAGES_KEY) || SEED.slice();
+    let collections = loadJSON(COLLECTIONS_KEY) || { 'Favorites': [] };
+    let likes = loadJSON(LIKES_KEY) || {};
+    let page = 1;
+    let sortNewest = true;
+
+    // Elements
+    const masonry = $('#masonry');
+    const loader = $('#loader');
+    const totalCount = $('#totalCount');
+    const searchInput = $('#search');
+    const fileInput = $('#fileInput');
+    const uploadBtn = $('#uploadBtn');
+    const modalBackdrop = $('#modalBackdrop');
+    const modalImage = $('#modalImage');
+    const modalTitle = $('#modalTitle');
+    const modalAuthor = $('#modalAuthor');
+    const modalMeta = $('#modalMeta');
+    const likeBtn = $('#likeBtn');
+    const downloadBtn = $('#downloadBtn');
+    const saveToCollection = $('#saveToCollection');
+    const collectionsList = $('#collectionsList');
+    const newCollectionBtn = $('#newCollectionBtn');
+    const sortBtn = $('#sortBtn');
+    const clearBtn = $('#clearBtn');
+
+    // Initialize
+    renderCollectionsUI();
+    render();
+    populateCollectionSelect();
+
+    // Event handlers
+    searchInput.addEventListener('input', () => render());
+    uploadBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', handleFiles);
+    masonry.addEventListener('dragover', (e) => { e.preventDefault(); masonry.style.opacity = 0.8 });
+    masonry.addEventListener('dragleave', (e) => { masonry.style.opacity = 1 });
+    masonry.addEventListener('drop', (e) => { e.preventDefault(); masonry.style.opacity = 1; handleDrop(e); });
+
+    newCollectionBtn.addEventListener('click', () => {
+      const name = prompt('Name your new collection');
+      if (name) { collections[name] = []; saveJSON(COLLECTIONS_KEY, collections); renderCollectionsUI(); populateCollectionSelect(); }
+    });
+
+    sortBtn.addEventListener('click', () => { sortNewest = !sortNewest; sortBtn.textContent = sortNewest ? 'Sort: Newest' : 'Sort: Popular'; render(); });
+    clearBtn.addEventListener('click', () => { if(confirm('Clear all saved data? This cannot be undone.')) { localStorage.removeItem(IMAGES_KEY); localStorage.removeItem(COLLECTIONS_KEY); localStorage.removeItem(LIKES_KEY); images = SEED.slice(); collections = {'Favorites':[]}; likes = {}; renderCollectionsUI(); render(); populateCollectionSelect(); } });
+
+    // Infinite scroll observer
+    const intersectionObserver = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) { loadMore(); }
+      });
+    }, { root: null, rootMargin: '400px', threshold: 0.1 });
+    intersectionObserver.observe(loader);
+
+    // Modal close
+    $('#closeModal').addEventListener('click', () => closeModal());
+    modalBackdrop.addEventListener('click', (e) => { if(e.target === modalBackdrop) closeModal(); });
+
+    likeBtn.addEventListener('click', () => {
+      const id = modalBackdrop.dataset.current;
+      if(!id) return;
+      likes[id] = likes[id] ? likes[id]+1 : 1;
+      saveJSON(LIKES_KEY, likes);
+      render();
+      updateModalLikes(id);
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      const id = modalBackdrop.dataset.current; if(!id) return; const item = images.find(x=>x.id===id); if(!item) return;
+      // create a link and download (cross-origin images might block filename; we attempt a simple approach)
+      const a = document.createElement('a'); a.href = item.src; a.download = (item.title || 'photo') + '.jpg'; document.body.appendChild(a); a.click(); a.remove();
+    });
+
+    saveToCollection.addEventListener('change', () => {
+      const coll = saveToCollection.value; const id = modalBackdrop.dataset.current; if(!coll || !id) return; if(!collections[coll]) collections[coll]=[]; if(!collections[coll].includes(id)) collections[coll].push(id); saveJSON(COLLECTIONS_KEY, collections); renderCollectionsUI();
+      alert('Saved to '+coll);
+    });
+
+    // Keyboard accessibility: Escape closes modal
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+    // Core render function
+    function render() {
+      const q = (searchInput.value || '').trim().toLowerCase();
+      let list = images.slice();
+      if(q){ list = list.filter(i => (i.title||'').toLowerCase().includes(q) || (i.author||'').toLowerCase().includes(q) || (i.tags||[]).join(' ').toLowerCase().includes(q)); }
+      if(sortNewest) list.sort((a,b)=> (b.created||0) - (a.created||0)); else list.sort((a,b)=> (likes[b.id]||0) - (likes[a.id]||0));
+
+      masonry.innerHTML = '';
+      list.forEach(item => {
+        const card = photoCard(item);
+        masonry.appendChild(card);
+      });
+      totalCount.textContent = `${list.length} photos`;
+    }
+
+    // Create a DOM card for a photo
+    function photoCard(item){
+      const el = document.createElement('div'); el.className='card';
+      el.innerHTML = `
+        <div class="photo-wrapper">
+          <img loading="lazy" src="${escapeHtml(item.src)}" alt="${escapeHtml(item.title||'Photo')}"/>
+        </div>
+        <div class="meta">
+          <div class="left">
+            <div class="avatar">${escapeHtml((item.author||'U').slice(0,1))}</div>
+            <div>
+              <div class="photo-title">${escapeHtml(item.title||'Untitled')}</div>
+              <div class="photo-author">${escapeHtml(item.author||'Unknown')}</div>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:13px;color:var(--muted)">${likes[item.id]||item.likes||0} ♥</div>
+            <button data-id="${escapeHtml(item.id)}" class="btn ghost openBtn" style="margin-top:6px">Open</button>
+          </div>
+        </div>
+      `;
+
+      // open button
+      el.querySelector('.openBtn').addEventListener('click', (e)=> openModal(item.id));
+
+      // allow clicking the image to open
+      el.querySelector('img').addEventListener('click', ()=> openModal(item.id));
+
+      // simple lazy image fallback handling (if image fails, replace with placeholder)
+      el.querySelector('img').addEventListener('error', (ev) => { ev.target.src = placeholderImage(800,600); });
+
+      return el;
+    }
+
+    // Open modal with details
+    function openModal(id){
+      const item = images.find(x=>x.id===id); if(!item) return;
+      modalBackdrop.style.display = 'flex';
+      modalBackdrop.dataset.current = id;
+      modalImage.src = item.src;
+      modalImage.alt = item.title || 'Photo';
+      modalTitle.textContent = item.title || 'Untitled';
+      modalAuthor.textContent = 'By ' + (item.author || 'Unknown');
+      modalMeta.innerHTML = `Dimensions: ${item.w||'—'} × ${item.h||'—'}<br>Uploaded: ${item.created ? new Date(item.created).toLocaleString() : 'Unknown'}<br>Likes: ${likes[item.id]||item.likes||0}`;
+      updateModalLikes(id);
+    }
+
+    function closeModal(){ modalBackdrop.style.display = 'none'; modalBackdrop.dataset.current = ''; }
+
+    function updateModalLikes(id){ const count = likes[id]||images.find(x=>x.id===id)?.likes||0; likeBtn.textContent = `Like (${count})`; }
+
+    // Save to localStorage helper
+    function saveJSON(key, obj){ try{ localStorage.setItem(key, JSON.stringify(obj)); }catch(e){ console.warn('localStorage set failed',e); }}
+    function loadJSON(key){ try{ const s = localStorage.getItem(key); return s ? JSON.parse(s) : null;}catch(e){ return null; }}
+
+    // File handling (upload)
+    function handleFiles(e){ const files = e.target.files || e.dataTransfer?.files; if(!files || !files.length) return; Array.from(files).forEach(processFile); fileInput.value=''; }
+    function handleDrop(e){ const files = e.dataTransfer.files; if(!files || !files.length) return; Array.from(files).forEach(processFile); }
+
+    function processFile(file){
+      // only accept images
+      if(!file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = function(ev){
+        const src = ev.target.result; // data URL
+        const id = 'u_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
+        const item = { id, title: file.name, author: 'You', src, w: 0, h:0, likes:0, created: Date.now() };
+        images.unshift(item); saveJSON(IMAGES_KEY, images); render();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // Load more (infinite scroll): creates picsum placeholders to simulate network data
+    function loadMore(){
+      page++;
+      const batch = Array.from({length:6}).map((_,i)=>{
+        const id = 'g_' + Date.now() + '_' + i + '_' + page;
+        const w = 600 + Math.floor(Math.random()*800);
+        const h = 400 + Math.floor(Math.random()*900);
+        return { id, title: 'Generated ' + id.slice(-6), author: 'Generator', src: placeholderImage(w,h), w, h, likes: Math.floor(Math.random()*100), created: Date.now()-Math.floor(Math.random()*10000000) };
+      });
+      images = images.concat(batch); saveJSON(IMAGES_KEY, images); render();
+    }
+
+    // Placeholder generator (picsum-style predictable url)
+    function placeholderImage(w,h){ return `https://picsum.photos/${Math.floor(w)}/${Math.floor(h)}?random=${Math.floor(Math.random()*10000)}`; }
+
+    // Collections UI
+    function renderCollectionsUI(){
+      collectionsList.innerHTML = '';
+      Object.keys(collections).forEach(name => {
+        const div = document.createElement('div'); div.className='collection';
+        const count = collections[name].length;
+        div.innerHTML = `<div style="font-weight:600">${escapeHtml(name)}</div><div style="display:flex;gap:8px;align-items:center"><div style="color:var(--muted);font-size:13px">${count}</div><button data-coll="${escapeHtml(name)}" class="btn ghost small viewColl">View</button></div>`;
+        collectionsList.appendChild(div);
+      });
+      // view buttons
+      $$('.viewColl', collectionsList).forEach(b=>b.addEventListener('click', (ev)=>{
+        const name = ev.currentTarget.dataset.coll; viewCollection(name);
+      }));
+    }
+
+    function viewCollection(name){
+      const ids = collections[name] || [];
+      if(ids.length === 0){ alert('Collection is empty'); return; }
+      // filter images to those ids
+      const filtered = images.filter(i=>ids.includes(i.id));
+      // temporarily set search box and render
+      searchInput.value = ''; masonry.innerHTML=''; filtered.forEach(item=> masonry.appendChild(photoCard(item))); totalCount.textContent = `${filtered.length} photos`;
+    }
+
+    function populateCollectionSelect(){ saveToCollection.innerHTML = '<option value="">Save to...</option>' + Object.keys(collections).map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join(''); }
+
+    // small helpers
+    function escapeHtml(s){ if(!s && s!==0) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+    // On first load, if localStorage images missing, seed persist
+    if(!loadJSON(IMAGES_KEY)){ saveJSON(IMAGES_KEY, images); }
+    if(!loadJSON(COLLECTIONS_KEY)){ saveJSON(COLLECTIONS_KEY, collections); }
+    if(!loadJSON(LIKES_KEY)){ saveJSON(LIKES_KEY, likes); }
+
+    // Accessibility: announce when images changed (aria-live used on masonry container indirectly)
+
+    // End of script
+  </script>
+</body>
+</html>
